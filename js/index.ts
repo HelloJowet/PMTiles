@@ -439,7 +439,7 @@ function detectVersion(a: ArrayBuffer): number {
   return 3;
 }
 
-export class EtagMismatch extends Error {}
+export class EtagMismatch extends Error { }
 
 export interface Cache {
   getHeader: (source: Source, current_etag?: string) => Promise<Header>;
@@ -482,7 +482,7 @@ async function getHeaderAndRoot(
   if (current_etag && resp.etag != current_etag) {
     console.warn(
       "ETag conflict detected; your HTTP server might not support content-based ETag headers. ETags disabled for " +
-        source.getKey()
+      source.getKey()
     );
     resp_etag = undefined;
   }
@@ -841,23 +841,11 @@ export class PMTiles {
     return await this.cache.getHeader(this.source);
   }
 
-  async getZxyAttempt(
-    z: number,
-    x: number,
-    y: number,
+  async getZxy(
+    tile_id: number,
     signal?: AbortSignal
   ): Promise<RangeResponse | undefined> {
-    const tile_id = zxyToTileId(z, x, y);
     const header = await this.cache.getHeader(this.source);
-
-    // V2 COMPATIBILITY
-    if (header.specVersion < 3) {
-      return v2.getZxy(header, this.source, this.cache, z, x, y, signal);
-    }
-
-    if (z < header.minZoom || z > header.maxZoom) {
-      return undefined;
-    }
 
     let d_o = header.rootDirectoryOffset;
     let d_l = header.rootDirectoryLength;
@@ -895,24 +883,6 @@ export class PMTiles {
       }
     }
     throw Error("Maximum directory depth exceeded");
-  }
-
-  async getZxy(
-    z: number,
-    x: number,
-    y: number,
-    signal?: AbortSignal
-  ): Promise<RangeResponse | undefined> {
-    try {
-      return await this.getZxyAttempt(z, x, y, signal);
-    } catch (e) {
-      if (e instanceof EtagMismatch) {
-        this.cache.invalidate(this.source, e.message);
-        return await this.getZxyAttempt(z, x, y, signal);
-      } else {
-        throw e;
-      }
-    }
   }
 
   async getMetadataAttempt(): Promise<any> {

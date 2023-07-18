@@ -83,11 +83,15 @@ export default {
       return new Response(undefined, { status: 405 });
 
     const url = new URL(request.url);
-    const { ok, name, tile, ext } = tile_path(url.pathname);
+    // const { ok, name, tile, ext } = tile_path(url.pathname);
+    const urlPathResult = parseUrlPath(url.pathname)
 
     const cache = caches.default;
 
-    if (ok) {
+    if (urlPathResult) {
+      const [archiveName, fileId] = urlPathResult;
+      console.log(fileId)
+
       let allowed_origin = "";
       if (typeof env.ALLOWED_ORIGINS !== "undefined") {
         for (const o of env.ALLOWED_ORIGINS.split(",")) {
@@ -135,49 +139,13 @@ export default {
       };
 
       const cacheable_headers = new Headers();
-      const source = new R2Source(env, name);
+      const source = new R2Source(env, archiveName);
       const p = new PMTiles(source, CACHE, nativeDecompress);
       try {
         const p_header = await p.getHeader();
 
-        if (!tile) {
-          cacheable_headers.set("Content-Type", "application/json");
-
-          const t = tileJSON(
-            p_header,
-            await p.getMetadata(),
-            env.PUBLIC_HOSTNAME || url.hostname,
-            name
-          );
-
-          return cacheableResponse(JSON.stringify(t), cacheable_headers, 200);
-        }
-
-        if (tile[0] < p_header.minZoom || tile[0] > p_header.maxZoom) {
-          return cacheableResponse(undefined, cacheable_headers, 404);
-        }
-
-        for (const pair of [
-          [TileType.Mvt, "mvt"],
-          [TileType.Png, "png"],
-          [TileType.Jpeg, "jpg"],
-          [TileType.Webp, "webp"],
-          [TileType.Avif, "avif"],
-        ]) {
-          if (p_header.tileType === pair[0] && ext !== pair[1]) {
-            if (p_header.tileType == TileType.Mvt && ext === "pbf") {
-              // allow this for now. Eventually we will delete this in favor of .mvt
-              continue;
-            }
-            return cacheableResponse(
-              `Bad request: requested .${ext} but archive has type .${pair[1]}`,
-              cacheable_headers,
-              400
-            );
-          }
-        }
-
-        const tiledata = await p.getZxy(tile[0], tile[1], tile[2]);
+        const tiledata = await p.getZxy(fileId);
+        if (tiledata === undefined) return new Response("File in archive not found", { status: 404 });
 
         switch (p_header.tileType) {
           case TileType.Mvt:
@@ -211,3 +179,16 @@ export default {
     return new Response("Invalid URL", { status: 404 });
   },
 };
+
+const parseUrlPath = (path: string): [string, number] | undefined => {
+  const regexPattern: RegExp = /^\/(.+?)\/(\d+)\.pbf\.gz$/;
+
+  const match: RegExpExecArray | null = regexPattern.exec(path);
+
+  if (match) {
+    const archiveName: string = match[1];
+    const fileId: number = parseInt(match[2]);
+
+    return [archiveName, fileId]
+  }
+}
